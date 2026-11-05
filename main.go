@@ -19,6 +19,7 @@ const (
 	minTreeWidth     = 16 // batas bawah saat garis pemisah digeser
 	minRightWidth    = 30 // batas bawah lebar panel kanan
 	gutterWidth      = 1  // jarak kosong antara dua panel
+	resizeStep       = 2  // kolom per tekanan ctrl+left / ctrl+right
 	panelPadX        = 1  // padding kiri-kanan di dalam border; isi panel = lebar - 2*(border+padding)
 )
 
@@ -154,6 +155,12 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		case "ctrl+p":
 			m.togglePreview()
+			return m, nil
+		case "ctrl+left":
+			m.resizeBy(-resizeStep)
+			return m, nil
+		case "ctrl+right":
+			m.resizeBy(resizeStep)
 			return m, nil
 		}
 		if m.focus == focusTree {
@@ -365,6 +372,13 @@ func (m *model) wheelRight(msg tea.MouseMsg) {
 	}
 	moveCursor(&m.editor, dir, wheelLines)
 	m.editor, _ = m.editor.Update(msg)
+}
+
+// resizeBy menggeser garis pemisah dengan keyboard (ctrl+left / ctrl+right).
+// Preview di-render ulang di sini karena tidak ada drag yang perlu dihemat.
+func (m *model) resizeBy(delta int) {
+	m.setTreeWidth(m.treeW + delta)
+	m.refreshPreview()
 }
 
 // setTreeWidth mengubah lebar panel kiri dengan batas agar kedua panel tetap terbaca.

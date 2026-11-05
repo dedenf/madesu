@@ -13,3 +13,6 @@ coverage.out
 .vscode/
 *.swp
 .DS_Store
+
+# Release artifacts
+/dist/

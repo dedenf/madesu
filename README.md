@@ -9,7 +9,7 @@ Markdown simple utility.
 - File explorer with directory navigation (folders first, dotfiles hidden)
 - Plain text editor for `.md` and other text files
 - Rendered Markdown preview, scrollable with keyboard and mouse
-- Resizable panes: drag the divider with the mouse
+- Resizable panes: drag the divider with the mouse, or use `ctrl+←` / `ctrl+→`
 - Mouse wheel / trackpad scrolling in both editor and preview
 - Single binary, no runtime dependencies
 
@@ -86,6 +86,14 @@ Editing follows the standard `bubbles/textarea` keys, such as `ctrl+a` / `ctrl+e
 ### Opening a file
 
 Opening a file puts the cursor on its first line, and the editor gets focus.
+
+## Resizing panes
+
+| Key | Action |
+| --- | --- |
+| `ctrl+←` / `ctrl+→` | Move the divider 2 columns left or right (works from either pane) |
+
+The mouse can also drag the divider; see below.
 
 ## Mouse
 
