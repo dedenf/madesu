@@ -88,6 +88,12 @@ type model struct {
 	dragging bool // true selama tombol kiri ditahan di garis pemisah
 	treeTop  int  // indeks entry pertama yang terlihat di explorer
 
+	mode      editMode   // vim mode, hanya berlaku saat editor fokus
+	undoStack []snapshot // riwayat undo untuk file yang sedang dibuka
+	undoStart *snapshot  // baseline sesi insert; satu sesi = satu langkah undo
+	pendingD  bool       // normal mode: "d" pertama sudah ditekan
+	cmdline   string     // isi command line setelah ":"
+
 	status        string
 	width, height int
 }
@@ -107,6 +113,7 @@ func newModel(dir string, dark bool) (model, error) {
 		dark:   dark,
 		th:     newTheme(dark),
 		focus:  focusTree,
+		mode:   modeInsert,
 		treeW:  defaultTreeWidth,
 	}
 	if err := m.loadDir(abs); err != nil {
@@ -189,7 +196,22 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.preview, cmd = m.preview.Update(msg)
 			return m, cmd
 		}
-		// Editor: home/end tetap per baris (bawaan textarea); ctrl+home/ctrl+end ke dokumen.
+		// Editor: normal/command mode ditangani lebih dulu; sisanya insert.
+		switch m.mode {
+		case modeCommand:
+			m.updateCmdline(msg)
+			return m, nil
+		case modeNormal:
+			cmd := m.updateNormal(msg)
+			return m, cmd
+		}
+		if msg.String() == "esc" {
+			m.endInsert()
+			m.mode = modeNormal
+			m.status = ""
+			return m, nil
+		}
+		// Insert: home/end tetap per baris (bawaan textarea); ctrl+home/ctrl+end ke dokumen.
 		switch msg.String() {
 		case "pgup":
 			moveCursor(&m.editor, -1, m.editor.Height())
@@ -204,8 +226,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			moveToDocEdge(&m.editor, 1)
 			return m, nil
 		}
-		var cmd tea.Cmd
-		m.editor, cmd = m.editor.Update(msg)
+		cmd := m.updateInsert(msg)
 		return m, cmd
 	}
 	return m, nil
@@ -220,10 +241,12 @@ func (m *model) toggleFocus() {
 		m.focus = focusRight
 		if !m.showPrev {
 			m.editor.Focus()
+			m.beginInsert()
 		}
 		return
 	}
 	m.focus = focusTree
+	m.endInsert()
 	m.editor.Blur()
 }
 
@@ -235,11 +258,13 @@ func (m *model) togglePreview() {
 	m.showPrev = !m.showPrev
 	m.focus = focusRight
 	if m.showPrev {
+		m.endInsert()
 		m.editor.Blur()
 		m.refreshPreview()
 		m.status = ""
 	} else {
 		m.editor.Focus()
+		m.beginInsert()
 		m.status = ""
 	}
 }
@@ -354,6 +379,11 @@ func (m *model) openFile(path string) {
 	// SetValue menaruh kursor di akhir teks; file dibuka dari baris pertama.
 	moveToDocEdge(&m.editor, -1)
 	m.focus = focusRight
+	m.cmdline = ""
+	m.pendingD = false
+	m.undoStack = nil
+	m.undoStart = nil
+	m.beginInsert()
 	if m.showPrev {
 		m.refreshPreview()
 	} else {
@@ -556,7 +586,14 @@ func (m model) hints() string {
 	case m.showPrev:
 		pairs = append([][2]string{{"↑↓", "scroll"}, {"ctrl+p", "editor"}}, pairs...)
 	default:
-		pairs = append([][2]string{{"ctrl+s", "save"}, {"ctrl+p", "preview"}}, pairs...)
+		switch m.mode {
+		case modeNormal:
+			pairs = append([][2]string{{":w", "save"}, {"dd", "delete line"}, {"u", "undo"}, {"i", "insert"}}, pairs...)
+		case modeCommand:
+			pairs = append([][2]string{{"enter", "run"}, {"esc", "cancel"}}, pairs...)
+		default:
+			pairs = append([][2]string{{"ctrl+s", "save"}, {"esc", "normal"}, {"ctrl+p", "preview"}}, pairs...)
+		}
 	}
 	parts := make([]string, 0, len(pairs))
 	for _, p := range pairs {
@@ -572,9 +609,14 @@ func (m model) statusBar() string {
 	case m.focus == focusRight && m.showPrev:
 		label = "Preview"
 	case m.focus == focusRight:
-		label = "Editor"
+		label = "Editor · " + m.mode.label()
 	}
 	badge := m.th.badge.Render(" " + label + " ")
+
+	msg := m.status
+	if m.focus == focusRight && !m.showPrev && m.mode == modeCommand {
+		msg = ":" + m.cmdline
+	}
 
 	hints := m.hints()
 	hintW := lipgloss.Width(hints)
@@ -587,7 +629,7 @@ func (m model) statusBar() string {
 	if strings.HasPrefix(m.status, "error") {
 		msgStyle = m.th.errMsg
 	}
-	left := badge + "  " + msgStyle.Render(truncate(m.status, msgRoom))
+	left := badge + "  " + msgStyle.Render(truncate(msg, msgRoom))
 	gap := m.width - lipgloss.Width(left) - hintW
 	if gap < 1 {
 		gap = 1
