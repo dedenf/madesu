@@ -6,11 +6,11 @@ Markdown simple utility.
 
 ## Features
 
-- File explorer with directory navigation (folders first, dotfiles hidden)
+- File explorer with directory navigation (folders first; shows all files including dotfiles; symlinks marked with `@`)
 - Plain text editor for `.md` and other text files
 - Rendered Markdown preview, scrollable with keyboard and mouse
-- Resizable panes: drag the divider with the mouse, or use `ctrl+←` / `ctrl+→`
-- Mouse wheel / trackpad scrolling in both editor and preview
+- Resizable panes: drag the divider with the mouse, or use `ctrl+shift+←` / `ctrl+shift+→`
+- Mouse wheel / trackpad scrolling in the explorer, editor, and preview
 - Single binary, no runtime dependencies
 
 ## Requirements
@@ -57,8 +57,11 @@ The first argument is always treated as a directory path. There are no other fla
 | --- | --- |
 | `↑` / `k`, `↓` / `j` | Move selection |
 | `enter` | Open a file, or enter a directory (`..` goes up) |
+| mouse wheel | Scroll the list without moving the selection, until the selection leaves the view |
 | `tab` | Switch to the right pane |
 | `ctrl+c` | Quit |
+
+In the explorer, names are marked: a trailing `/` is a folder, and a trailing `@` is a symlink. Symlinks to folders can be entered like normal folders; broken symlinks are also marked `@` and can't be entered.
 
 ### Editor (right pane)
 
@@ -91,14 +94,26 @@ Opening a file puts the cursor on its first line, and the editor gets focus.
 
 | Key | Action |
 | --- | --- |
-| `ctrl+←` / `ctrl+→` | Move the divider 2 columns left or right (works from either pane) |
+| `ctrl+shift+←` / `ctrl+shift+→` | Move the divider 2 columns left or right (works from either pane) |
 
 The mouse can also drag the divider; see below.
+
+### macOS Terminal.app setup
+
+Terminal.app does not send `ctrl+shift+←` / `ctrl+shift+→` by default, so the shortcut does nothing until you map them. Ghostty works without setup. To map them in Terminal.app:
+
+1. Open Terminal → Settings (`⌘,`) → Profiles → select your profile → **Keyboard**.
+2. Click `+`, press `ctrl+shift+←` in the key field.
+3. Set the action to **Send String to Shell** and enter `\033[1;6D`.
+4. Repeat for `ctrl+shift+→` with the string `\033[1;6C`.
 
 ## Mouse
 
 - **Drag the divider** between the explorer and the right pane to resize them. Press on the border or the gap (±1 column), drag, and release. The explorer keeps at least 16 columns and the right pane at least 30.
-- **Wheel / trackpad** scrolls the right pane by 3 lines per notch. In the editor, the cursor moves with the view so the text under the pointer keeps scrolling.
+- **Wheel / trackpad** scrolls the pane under the pointer, 3 lines per notch:
+  - Explorer: the list scrolls and the selection stays put until it leaves the view.
+  - Editor: the cursor moves with the view so the text under the pointer keeps scrolling.
+  - Preview: scrolls the rendered document.
 
 Because the app captures mouse events, your terminal's native text selection is disabled while it runs. To select text anyway, hold the terminal's bypass modifier while dragging: `option` in iTerm2, and usually `fn` in Terminal.app.
 
@@ -147,7 +162,7 @@ The code is a single Go package:
 | File | Contents |
 | --- | --- |
 | `main.go` | Bubble Tea model, key and mouse handling, layout, theme |
-| `explorer.go` | Directory listing (folders first, dotfiles hidden) |
+| `explorer.go` | Directory listing (folders first, all entries including dotfiles and symlinks) |
 | `mdrender.go` | Markdown to ANSI renderer on top of goldmark |
 | `*_test.go` | Tests for layout geometry, keys, mouse drag and wheel, and the renderer |
 | `testdata/` | Sample Markdown used by the layout tests |
@@ -156,7 +171,6 @@ Dependencies: [Bubble Tea](https://github.com/charmbracelet/bubbletea), [Bubbles
 
 ## Known limitations
 
-- The explorer has no mouse wheel support yet.
 - The editor's wheel scrolling moves the cursor along with the view, because `bubbles/textarea` does not expose its scroll offset.
 - The whole file is loaded into memory. Very large files will be slow to render in the preview (roughly 100 ms per 600 KB).
 - No undo beyond what the editor component provides.

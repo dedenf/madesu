@@ -19,7 +19,7 @@ const (
 	minTreeWidth     = 16 // batas bawah saat garis pemisah digeser
 	minRightWidth    = 30 // batas bawah lebar panel kanan
 	gutterWidth      = 1  // jarak kosong antara dua panel
-	resizeStep       = 2  // kolom per tekanan ctrl+left / ctrl+right
+	resizeStep       = 2  // kolom per tekanan ctrl+shift+left / ctrl+shift+right
 	panelPadX        = 1  // padding kiri-kanan di dalam border; isi panel = lebar - 2*(border+padding)
 )
 
@@ -86,6 +86,7 @@ type model struct {
 
 	treeW    int  // lebar panel kiri saat ini, bisa diubah dengan drag mouse
 	dragging bool // true selama tombol kiri ditahan di garis pemisah
+	treeTop  int  // indeks entry pertama yang terlihat di explorer
 
 	status        string
 	width, height int
@@ -122,6 +123,7 @@ func (m *model) loadDir(dir string) error {
 	m.dir = dir
 	m.entries = es
 	m.cursor = 0
+	m.treeTop = 0
 	return nil
 }
 
@@ -136,8 +138,13 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case tea.MouseMsg:
 		ev := tea.MouseEvent(msg)
-		if isWheel(ev) && ev.X > m.treeW {
-			m.wheelRight(msg)
+		if isWheel(ev) {
+			switch {
+			case ev.X > m.treeW:
+				m.wheelRight(msg)
+			case ev.X < m.treeW:
+				m.wheelTree(wheelDir(ev.Button))
+			}
 			return m, nil
 		}
 		m.handleMouse(ev)
@@ -156,10 +163,10 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+p":
 			m.togglePreview()
 			return m, nil
-		case "ctrl+left":
+		case "ctrl+shift+left":
 			m.resizeBy(-resizeStep)
 			return m, nil
-		case "ctrl+right":
+		case "ctrl+shift+right":
 			m.resizeBy(resizeStep)
 			return m, nil
 		}
@@ -269,7 +276,48 @@ func moveToDocEdge(ta *textarea.Model, dir int) {
 	}
 }
 
+// treeRows: jumlah baris entry yang muat di panel explorer.
+// Body = height-1; panel = body-2 (border); di dalam: 2 baris judul/path.
+func (m model) treeRows() int { return max(1, m.height-5) }
+
+// clampTreeTop menjaga treeTop tetap di dalam daftar.
+func (m *model) clampTreeTop() {
+	maxTop := max(0, len(m.entries)-m.treeRows())
+	m.treeTop = clamp(m.treeTop, 0, maxTop)
+}
+
+// syncTree memastikan kursor selalu terlihat di explorer.
+func (m *model) syncTree() {
+	rows := m.treeRows()
+	if m.cursor < m.treeTop {
+		m.treeTop = m.cursor
+	}
+	if m.cursor >= m.treeTop+rows {
+		m.treeTop = m.cursor - rows + 1
+	}
+	m.clampTreeTop()
+}
+
+// wheelTree menggeser view explorer. Kursor hanya ikut kalau keluar dari area yang terlihat.
+func (m *model) wheelTree(dir int) {
+	if len(m.entries) == 0 {
+		return
+	}
+	m.treeTop += dir * wheelLines
+	m.clampTreeTop()
+	last := min(m.treeTop+m.treeRows(), len(m.entries)) - 1
+	m.cursor = clamp(m.cursor, m.treeTop, last)
+}
+
+func wheelDir(b tea.MouseButton) int {
+	if b == tea.MouseButtonWheelUp {
+		return -1
+	}
+	return 1
+}
+
 func (m *model) updateTree(key string) {
+	defer m.syncTree()
 	switch key {
 	case "up", "k":
 		if m.cursor > 0 {
@@ -374,7 +422,7 @@ func (m *model) wheelRight(msg tea.MouseMsg) {
 	m.editor, _ = m.editor.Update(msg)
 }
 
-// resizeBy menggeser garis pemisah dengan keyboard (ctrl+left / ctrl+right).
+// resizeBy menggeser garis pemisah dengan keyboard (ctrl+shift+left / ctrl+shift+right).
 // Preview di-render ulang di sini karena tidak ada drag yang perlu dihemat.
 func (m *model) resizeBy(delta int) {
 	m.setTreeWidth(m.treeW + delta)
@@ -446,14 +494,13 @@ func (m model) treeView(innerW, innerH int) string {
 	b.WriteString(m.th.muted.Render(" "+truncate(m.dir, innerW-1)) + "\n")
 
 	visible := innerH - 2
-	start := 0
-	if m.cursor >= visible {
-		start = m.cursor - visible + 1
-	}
-	for i := start; i < len(m.entries) && i < start+visible; i++ {
+	for i := m.treeTop; i < len(m.entries) && i < m.treeTop+visible; i++ {
 		e := m.entries[i]
 		name := e.name
-		if e.isDir && name != ".." {
+		switch {
+		case e.isLink:
+			name += "@" // symlink: beda dari file/folder biasa
+		case e.isDir && name != "..":
 			name += "/"
 		}
 		name = truncate(" "+name, innerW)
