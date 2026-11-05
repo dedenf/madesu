@@ -1,0 +1,15 @@
+# Binaries
+/madesu
+*.exe
+*.test
+*.out
+
+# Go build and tool caches
+/vendor/
+coverage.out
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store
