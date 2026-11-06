@@ -721,7 +721,7 @@ Expected: FAIL — most of these currently parse silently or partially.
 In `mermaid.go`, add the keyword guard at the top of `statement` and reject directives in `parseFlowchart`:
 
 ```go
-var unsupportedKWs = []string{"subgraph", "classDef", "class", "style", "linkStyle", "click"}
+var unsupportedKWs = []string{"subgraph", "end", "classDef", "class", "style", "linkStyle", "click"}
 
 func hasKeyword(s, kw string) bool {
 	if !strings.HasPrefix(s, kw) {
