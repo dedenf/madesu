@@ -58,11 +58,11 @@ func TestParseHeader(t *testing.T) {
 		src  string
 		want dirKind
 	}{
-		{"flowchart TD\nA --> B", dirTB},
-		{"flowchart tb\nA --> B", dirTB},
-		{"graph LR\nA --> B", dirLR},
-		{"flowchart BT\nA --> B", dirBT},
-		{"graph rl\nA --> B", dirRL},
+		{"flowchart TD", dirTB},
+		{"flowchart tb", dirTB},
+		{"graph LR", dirLR},
+		{"flowchart BT", dirBT},
+		{"graph rl", dirRL},
 	}
 	for _, tc := range cases {
 		g := mustParse(t, tc.src)
