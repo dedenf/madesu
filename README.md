@@ -65,16 +65,37 @@ In the explorer, names are marked: a trailing `/` is a folder, and a trailing `@
 
 ### Editor (right pane)
 
+The editor has vim-style modes. It starts in INSERT mode; `esc` returns to NORMAL mode.
+
+**INSERT mode**
+
 | Key | Action |
 | --- | --- |
 | `ctrl+s` | Save |
+| `esc` | Switch to NORMAL mode |
 | `ctrl+p` | Switch to the preview |
 | `tab` | Switch to the explorer |
 | `pgup` / `pgdown` | Move the cursor one screen up or down |
 | `home` / `end` | Start / end of the current line |
 | `ctrl+home` / `ctrl+end` | Start / end of the document |
 
-Editing follows the standard `bubbles/textarea` keys, such as `ctrl+a` / `ctrl+e` for line start and end, and `ctrl+w` to delete a word.
+**NORMAL mode**
+
+| Key | Action |
+| --- | --- |
+| `:w` then `enter` | Save |
+| `dd` | Delete the line under the cursor |
+| `u` | Undo |
+| `i` / `a` | Back to INSERT (before / after the cursor) |
+| `h` `j` `k` `l` / arrows | Move the cursor |
+| `esc` | Cancel `d`, or stay in NORMAL |
+| `ctrl+s` | Save (still available) |
+| `ctrl+p` | Switch to the preview |
+| `tab` | Switch to the explorer |
+
+One insert session (everything typed between entering INSERT and pressing `esc`) is one undo step, as is each `dd`. Undo history is per open file and is cleared when another file is opened.
+
+Editing also follows the standard `bubbles/textarea` keys while in INSERT mode, such as `ctrl+a` / `ctrl+e` for line start and end, and `ctrl+w` to delete a word.
 
 ### Preview (right pane)
 
