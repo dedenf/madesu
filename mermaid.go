@@ -114,10 +114,117 @@ type parser struct {
 	byID map[string]*flowNode
 }
 
-// statement parses one `;`/newline-separated statement. Body statements are
-// added by later tasks; until then everything is unsupported.
 func (p *parser) statement(s string) error {
-	return errUnsupported
+	sc := &scan{s: s}
+	_, err := sc.nodeDef(p)
+	return err
+}
+
+type scan struct {
+	s   string
+	pos int
+}
+
+func (sc *scan) done() bool { return sc.pos >= len(sc.s) }
+
+func (sc *scan) peek() byte {
+	if sc.pos < len(sc.s) {
+		return sc.s[sc.pos]
+	}
+	return 0
+}
+
+func (sc *scan) spaces() {
+	for sc.pos < len(sc.s) && (sc.s[sc.pos] == ' ' || sc.s[sc.pos] == '\t') {
+		sc.pos++
+	}
+}
+
+func (sc *scan) nodeDef(p *parser) (*flowNode, error) {
+	start := sc.pos
+	for sc.pos < len(sc.s) && isIDChar(sc.s[sc.pos]) {
+		sc.pos++
+	}
+	if sc.pos == start {
+		return nil, errUnsupported
+	}
+	id := sc.s[start:sc.pos]
+	shape, label, ok, err := sc.shape()
+	if err != nil {
+		return nil, err
+	}
+	n := p.byID[id]
+	if n == nil {
+		n = &flowNode{id: id}
+		p.byID[id] = n
+		p.g.nodes = append(p.g.nodes, n)
+	}
+	if ok {
+		n.shape, n.label = shape, label
+	}
+	if n.label == "" {
+		n.label = id
+	}
+	return n, nil
+}
+
+func isIDChar(c byte) bool {
+	switch {
+	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		return true
+	case c == '_' || c >= 0x80: // multibyte ids stay inside one node name
+		return true
+	}
+	return false
+}
+
+var shapeDelims = []struct {
+	open, close string
+	kind        shapeKind
+}{
+	{"([", "])", shapeStadium},
+	{"((", "))", shapeCircle},
+	{"[", "]", shapeRect},
+	{"(", ")", shapeRounded},
+	{"{", "}", shapeDiamond},
+}
+
+func (sc *scan) shape() (shapeKind, string, bool, error) {
+	for _, d := range shapeDelims {
+		if !strings.HasPrefix(sc.s[sc.pos:], d.open) {
+			continue
+		}
+		sc.pos += len(d.open)
+		label, ok := sc.scanTo(d.close)
+		if !ok {
+			return 0, "", false, errUnsupported
+		}
+		return d.kind, label, true, nil
+	}
+	return 0, "", false, nil
+}
+
+// scanTo consumes up to a closing delimiter outside double quotes.
+func (sc *scan) scanTo(close string) (string, bool) {
+	rest := sc.s[sc.pos:]
+	inQ := false
+	for i := 0; i+len(close) <= len(rest); i++ {
+		switch {
+		case rest[i] == '"':
+			inQ = !inQ
+		case !inQ && strings.HasPrefix(rest[i:], close):
+			sc.pos += i + len(close)
+			return unquote(strings.TrimSpace(rest[:i])), true
+		}
+	}
+	return "", false
+}
+
+func unquote(s string) string {
+	if len(s) >= 2 && s[0] == '"' && s[len(s)-1] == '"' {
+		return s[1 : len(s)-1]
+	}
+	return s
 }
 
 // stripComment cuts a `%%` comment that starts outside double quotes.
