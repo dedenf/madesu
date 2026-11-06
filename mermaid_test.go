@@ -100,3 +100,58 @@ func TestParseCommentsAndSemis(t *testing.T) {
 		t.Fatalf("nodes %d, want 2", len(g.nodes))
 	}
 }
+
+func TestParseEdges(t *testing.T) {
+	cases := []struct {
+		name  string
+		stmt  string
+		style edgeStyle
+		arrow bool
+		label string
+	}{
+		{"arrow", "A --> B", edgeNormal, true, ""},
+		{"open", "A --- B", edgeNormal, false, ""},
+		{"dotted", "A -.-> B", edgeDotted, true, ""},
+		{"thick", "A ==> B", edgeThick, true, ""},
+		{"pipe", "A -->|Yes| B", edgeNormal, true, "Yes"},
+		{"text arrow", "A -- No --> B", edgeNormal, true, "No"},
+		{"text open", "A -- maybe --- B", edgeNormal, false, "maybe"},
+		{"text dotted", "A -. wait .-> B", edgeDotted, true, "wait"},
+		{"text thick", "A == sure ==> B", edgeThick, true, "sure"},
+	}
+	for _, tc := range cases {
+		g := mustParse(t, "flowchart TD\n"+tc.stmt)
+		if len(g.edges) != 1 {
+			t.Fatalf("%s: edges %d, want 1", tc.name, len(g.edges))
+		}
+		e := g.edges[0]
+		if e.from != "A" || e.to != "B" || e.style != tc.style || e.arrow != tc.arrow || e.label != tc.label {
+			t.Fatalf("%s: edge %+v", tc.name, e)
+		}
+	}
+}
+
+func TestParseChainedEdges(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA --> B --> C")
+	if len(g.edges) != 2 {
+		t.Fatalf("edges %d, want 2", len(g.edges))
+	}
+	if g.edges[0].from != "A" || g.edges[0].to != "B" || g.edges[1].from != "B" || g.edges[1].to != "C" {
+		t.Fatalf("edges %+v", g.edges)
+	}
+}
+
+func TestParseEdgesRejectJunk(t *testing.T) {
+	for _, src := range []string{
+		"flowchart TD\nA --> B trailing",
+		"flowchart TD\nA -.- B",  // bare dotted open not in subset
+		"flowchart TD\nA === B",  // bare thick open not in subset
+		"flowchart TD\nA --o B",  // circle arrowheads not in subset
+		"flowchart TD\nA <--> B", // bidirectional not in subset
+		"flowchart TD\nA -->",    // dangling edge
+	} {
+		if _, err := parseFlowchart([]byte(src)); !errors.Is(err, errUnsupported) {
+			t.Fatalf("%q: err %v, want errUnsupported", src, err)
+		}
+	}
+}

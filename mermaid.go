@@ -116,8 +116,116 @@ type parser struct {
 
 func (p *parser) statement(s string) error {
 	sc := &scan{s: s}
-	_, err := sc.nodeDef(p)
-	return err
+	from, err := sc.nodeDef(p)
+	if err != nil {
+		return err
+	}
+	for {
+		sc.spaces()
+		if sc.done() {
+			return nil
+		}
+		e, err := sc.edge()
+		if err != nil {
+			return err
+		}
+		sc.spaces()
+		to, err := sc.nodeDef(p)
+		if err != nil {
+			return err
+		}
+		e.from, e.to = from.id, to.id
+		p.g.edges = append(p.g.edges, e)
+		from = to
+	}
+}
+
+func (sc *scan) edge() (flowEdge, error) {
+	var e flowEdge
+	rest := sc.s[sc.pos:]
+	switch {
+	case strings.HasPrefix(rest, "-."):
+		sc.pos += 2
+		if strings.HasPrefix(sc.s[sc.pos:], "->") {
+			sc.pos += 2
+			e = flowEdge{style: edgeDotted, arrow: true}
+		} else if lbl, arrow, ok := sc.edgeText(".->", ".-"); ok {
+			e = flowEdge{style: edgeDotted, arrow: arrow, label: lbl}
+		} else {
+			return e, errUnsupported
+		}
+	case strings.HasPrefix(rest, "=="):
+		sc.pos += 2
+		if sc.peek() == '>' {
+			sc.pos++
+			e = flowEdge{style: edgeThick, arrow: true}
+		} else if lbl, _, ok := sc.edgeText("==>", ""); ok {
+			e = flowEdge{style: edgeThick, arrow: true, label: lbl}
+		} else {
+			return e, errUnsupported
+		}
+	case strings.HasPrefix(rest, "--"):
+		sc.pos += 2
+		switch sc.peek() {
+		case '>':
+			sc.pos++
+			e = flowEdge{style: edgeNormal, arrow: true}
+		case '-':
+			sc.pos++
+			e = flowEdge{style: edgeNormal, arrow: false}
+		default:
+			lbl, arrow, ok := sc.edgeText("-->", "---")
+			if !ok {
+				return e, errUnsupported
+			}
+			e = flowEdge{style: edgeNormal, arrow: arrow, label: lbl}
+		}
+	default:
+		return e, errUnsupported
+	}
+	sc.spaces()
+	if sc.peek() == '|' {
+		sc.pos++
+		lbl, ok := sc.scanTo("|")
+		if !ok {
+			return e, errUnsupported
+		}
+		e.label = lbl
+	}
+	return e, nil
+}
+
+// edgeText scans " label " up to the arrow terminator, else the open
+// terminator, and consumes through the one it matched.
+func (sc *scan) edgeText(arrowTerm, openTerm string) (label string, arrow, ok bool) {
+	rest := sc.s[sc.pos:]
+	ia := indexUnquoted(rest, arrowTerm)
+	io := -1
+	if openTerm != "" {
+		io = indexUnquoted(rest, openTerm)
+	}
+	switch {
+	case ia >= 0 && (io < 0 || ia <= io):
+		sc.pos += ia + len(arrowTerm)
+		return strings.TrimSpace(unquote(strings.TrimSpace(rest[:ia]))), true, true
+	case io >= 0:
+		sc.pos += io + len(openTerm)
+		return strings.TrimSpace(unquote(strings.TrimSpace(rest[:io]))), false, true
+	}
+	return "", false, false
+}
+
+func indexUnquoted(s, sub string) int {
+	inQ := false
+	for i := 0; i+len(sub) <= len(s); i++ {
+		switch {
+		case s[i] == '"':
+			inQ = !inQ
+		case !inQ && strings.HasPrefix(s[i:], sub):
+			return i
+		}
+	}
+	return -1
 }
 
 type scan struct {
