@@ -63,6 +63,9 @@ func parseFlowchart(src []byte) (*flowGraph, error) {
 	head := -1
 	for i, l := range lines {
 		t := strings.TrimSpace(l)
+		if strings.HasPrefix(t, "%%{") {
+			return nil, errUnsupported
+		}
 		if t == "" || strings.HasPrefix(t, "%%") {
 			continue
 		}
@@ -96,6 +99,9 @@ func parseFlowchart(src []byte) (*flowGraph, error) {
 	}
 	p := &parser{g: &flowGraph{dir: dir}, byID: map[string]*flowNode{}}
 	for _, l := range lines[head+1:] {
+		if t := strings.TrimSpace(l); strings.HasPrefix(t, "%%{") {
+			return nil, errUnsupported
+		}
 		for _, stmt := range strings.Split(l, ";") {
 			stmt = strings.TrimSpace(stripComment(stmt))
 			if stmt == "" {
@@ -114,7 +120,26 @@ type parser struct {
 	byID map[string]*flowNode
 }
 
+// unsupportedKWs are statements the renderer does not support (see the spec:
+// subgraph/end, classDef/class/style/linkStyle/click); hasKeyword matches a
+// keyword only when it is the whole statement or followed by a delimiter, so
+// ids like "endpoint" stay parseable.
+var unsupportedKWs = []string{"subgraph", "end", "classDef", "class", "style", "linkStyle", "click"}
+
+func hasKeyword(s, kw string) bool {
+	if !strings.HasPrefix(s, kw) {
+		return false
+	}
+	rest := s[len(kw):]
+	return rest == "" || rest[0] == ' ' || rest[0] == '\t'
+}
+
 func (p *parser) statement(s string) error {
+	for _, kw := range unsupportedKWs {
+		if hasKeyword(s, kw) {
+			return errUnsupported
+		}
+	}
 	sc := &scan{s: s}
 	from, err := sc.nodeDef(p)
 	if err != nil {

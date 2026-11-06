@@ -155,3 +155,27 @@ func TestParseEdgesRejectJunk(t *testing.T) {
 		}
 	}
 }
+
+func TestParseUnsupportedConstructs(t *testing.T) {
+	for _, src := range []string{
+		"flowchart TD\nsubgraph one\nA --> B\nend",
+		"flowchart TD\nA --> B\nend",
+		"flowchart TD\nclassDef green fill:#9f6",
+		"flowchart TD\nclass A green",
+		"flowchart TD\nstyle A fill:#f9f",
+		"flowchart TD\nlinkStyle 0 stroke:#ff3",
+		"flowchart TD\nclick A call someFn()",
+		"flowchart TD\nA --> B\n%%{init: {'theme':'dark'}}%%",
+		"flowchart TD\nA>Flag] --> B",
+	} {
+		if _, err := parseFlowchart([]byte(src)); !errors.Is(err, errUnsupported) {
+			t.Fatalf("%q: err %v, want errUnsupported", src, err)
+		}
+	}
+}
+
+func TestParseDirectiveFirstLine(t *testing.T) {
+	if _, err := parseFlowchart([]byte("%%{init: {'theme':'dark'}}%%\nflowchart TD\nA --> B")); !errors.Is(err, errUnsupported) {
+		t.Fatalf("err %v, want errUnsupported", err)
+	}
+}
