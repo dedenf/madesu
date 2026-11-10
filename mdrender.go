@@ -210,6 +210,37 @@ func (r *mdRenderer) list(l *ast.List, width, depth int) string {
 }
 
 func (r *mdRenderer) codeBlock(n ast.Node, width int) string {
+	if fc, ok := n.(*ast.FencedCodeBlock); ok {
+		if lang := fc.Language(r.src); strings.EqualFold(string(lang), "mermaid") {
+			if out := r.mermaid(n); out != "" {
+				return out
+			}
+		}
+	}
+	return r.plainCode(n)
+}
+
+// mermaid renders a flowchart block, or "" to fall back to plain rendering.
+func (r *mdRenderer) mermaid(n ast.Node) string {
+	var raw []byte
+	lines := n.Lines()
+	for i := 0; i < lines.Len(); i++ {
+		seg := lines.At(i)
+		raw = append(raw, seg.Value(r.src)...)
+	}
+	g, err := parseFlowchart(raw)
+	if err != nil {
+		return ""
+	}
+	out, err := layoutFlowchartStyled(g, r.st.muted)
+	if err != nil {
+		return ""
+	}
+	return strings.Join(out, "\n")
+}
+
+// plainCode is the original code-block rendering: language label plus lines.
+func (r *mdRenderer) plainCode(n ast.Node) string {
 	var b strings.Builder
 	if fc, ok := n.(*ast.FencedCodeBlock); ok {
 		if lang := fc.Language(r.src); len(lang) > 0 {

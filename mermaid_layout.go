@@ -639,3 +639,37 @@ func putLabel(cv *canvas, a, c int, text string) {
 		i++
 	}
 }
+
+// layoutFlowchartStyled renders the graph with line-drawing chrome muted.
+func layoutFlowchartStyled(g *flowGraph, muted lipgloss.Style) ([]string, error) {
+	cells, err := buildGrid(g)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(cells))
+	for i, row := range cells {
+		var b strings.Builder
+		j := 0
+		for j < len(row) {
+			k := j
+			for k < len(row) && row[k].chrome == row[j].chrome {
+				k++
+			}
+			buf := make([]rune, 0, k-j)
+			for _, c := range row[j:k] {
+				buf = append(buf, c.ch)
+			}
+			s := string(buf)
+			if row[j].chrome {
+				s = muted.Render(s)
+			}
+			b.WriteString(s)
+			j = k
+		}
+		out[i] = strings.TrimRight(b.String(), " ")
+	}
+	for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
+		out = out[:len(out)-1]
+	}
+	return out, nil
+}
