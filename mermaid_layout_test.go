@@ -275,3 +275,26 @@ func TestLayoutDiamondCapCentered(t *testing.T) {
 		t.Fatalf("diamond cap not centered: %q", lines[0])
 	}
 }
+
+func TestNodeLabelBreakBecomesSpace(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA[One<br/>Two]")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if joined := strings.Join(lines, "\n"); !strings.Contains(joined, "One Two") {
+		t.Fatalf("br tag not normalized:\n%s", joined)
+	}
+}
+
+func TestLayoutBidirectionalBothArrows(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA <--> B")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "▼") || !strings.Contains(joined, "▲") {
+		t.Fatalf("bidirectional edge needs both arrowheads:\n%s", joined)
+	}
+}

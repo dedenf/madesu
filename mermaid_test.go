@@ -144,11 +144,10 @@ func TestParseChainedEdges(t *testing.T) {
 func TestParseEdgesRejectJunk(t *testing.T) {
 	for _, src := range []string{
 		"flowchart TD\nA --> B trailing",
-		"flowchart TD\nA -.- B",  // bare dotted open not in subset
-		"flowchart TD\nA === B",  // bare thick open not in subset
-		"flowchart TD\nA --o B",  // circle arrowheads not in subset
-		"flowchart TD\nA <--> B", // bidirectional not in subset
-		"flowchart TD\nA -->",    // dangling edge
+		"flowchart TD\nA -.- B", // bare dotted open not in subset
+		"flowchart TD\nA === B", // bare thick open not in subset
+		"flowchart TD\nA --o B", // circle arrowheads not in subset
+		"flowchart TD\nA -->",   // dangling edge
 	} {
 		if _, err := parseFlowchart([]byte(src)); !errors.Is(err, errUnsupported) {
 			t.Fatalf("%q: err %v, want errUnsupported", src, err)
@@ -158,8 +157,6 @@ func TestParseEdgesRejectJunk(t *testing.T) {
 
 func TestParseUnsupportedConstructs(t *testing.T) {
 	for _, src := range []string{
-		"flowchart TD\nsubgraph one\nA --> B\nend",
-		"flowchart TD\nA --> B\nend",
 		"flowchart TD\nclassDef green fill:#9f6",
 		"flowchart TD\nclass A green",
 		"flowchart TD\nstyle A fill:#f9f",
@@ -182,7 +179,6 @@ func TestParseDirectiveFirstLine(t *testing.T) {
 
 func TestParseRejectsExoticBracketShapes(t *testing.T) {
 	for _, src := range []string{
-		"flowchart TD\nA[(db)]",
 		"flowchart TD\nA[/parallelogram/]",
 		"flowchart TD\nA[[sub]]",
 		"flowchart TD\nA>flag]",
@@ -203,5 +199,43 @@ func TestParseUnicodeLetterID(t *testing.T) {
 	g := mustParse(t, "flowchart TD\n节点[Node]")
 	if len(g.nodes) != 1 || g.nodes[0].id != "节点" || g.nodes[0].label != "Node" {
 		t.Fatalf("nodes %+v", g.nodes)
+	}
+}
+
+func TestParseSubgraphFlattened(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nsubgraph one[\"Group\"]\nA --> B\nend\nsubgraph docker-compose\nC --> D\nend")
+	if len(g.nodes) != 4 || len(g.edges) != 2 {
+		t.Fatalf("nodes %d edges %d, want 4 and 2", len(g.nodes), len(g.edges))
+	}
+}
+
+func TestParseCylinderShape(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nDB[(\"Cloud SQL\")]")
+	if len(g.nodes) != 1 || g.nodes[0].label != "Cloud SQL" {
+		t.Fatalf("nodes %+v", g.nodes)
+	}
+	if g.nodes[0].shape == shapeRect {
+		t.Fatalf("cylinder rendered as rect")
+	}
+}
+
+func TestParseBidirectionalEdges(t *testing.T) {
+	cases := []struct {
+		stmt  string
+		style edgeStyle
+	}{
+		{"A <--> B", edgeNormal},
+		{"A <-.-> B", edgeDotted},
+		{"A <==> B", edgeThick},
+	}
+	for _, tc := range cases {
+		g := mustParse(t, "flowchart TD\n"+tc.stmt)
+		if len(g.edges) != 1 {
+			t.Fatalf("%q: edges %d", tc.stmt, len(g.edges))
+		}
+		e := g.edges[0]
+		if !e.bidir || !e.arrow || e.style != tc.style {
+			t.Fatalf("%q: edge %+v", tc.stmt, e)
+		}
 	}
 }

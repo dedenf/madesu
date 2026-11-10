@@ -52,6 +52,7 @@ type flowEdge struct {
 	label    string
 	style    edgeStyle
 	arrow    bool
+	bidir    bool // arrowheads at both ends (<-->)
 }
 
 type flowGraph struct {
@@ -123,10 +124,11 @@ type parser struct {
 }
 
 // unsupportedKWs are statements the renderer does not support (see the spec:
-// subgraph/end, classDef/class/style/linkStyle/click); hasKeyword matches a
-// keyword only when it is the whole statement or followed by a delimiter, so
-// ids like "endpoint" stay parseable.
-var unsupportedKWs = []string{"subgraph", "end", "classDef", "class", "style", "linkStyle", "click"}
+// classDef/class/style/linkStyle/click); hasKeyword matches a keyword only
+// when it is the whole statement or followed by a delimiter, so ids like
+// "endpoint" stay parseable. subgraph/end are accepted but flattened: their
+// nodes and edges render, the grouping box does not.
+var unsupportedKWs = []string{"classDef", "class", "style", "linkStyle", "click"}
 
 func hasKeyword(s, kw string) bool {
 	if !strings.HasPrefix(s, kw) {
@@ -141,6 +143,10 @@ func (p *parser) statement(s string) error {
 		if hasKeyword(s, kw) {
 			return errUnsupported
 		}
+	}
+	// Flatten subgraphs: the header and its "end" carry no nodes or edges.
+	if hasKeyword(s, "subgraph") || s == "end" {
+		return nil
 	}
 	sc := &scan{s: s}
 	from, err := sc.nodeDef(p)
@@ -171,6 +177,14 @@ func (sc *scan) edge() (flowEdge, error) {
 	var e flowEdge
 	rest := sc.s[sc.pos:]
 	switch {
+	case strings.HasPrefix(rest, "<-"), strings.HasPrefix(rest, "<="):
+		sc.pos++
+		inner, err := sc.edge()
+		if err != nil {
+			return e, err
+		}
+		inner.bidir = true
+		e = inner
 	case strings.HasPrefix(rest, "-."):
 		sc.pos += 2
 		if strings.HasPrefix(sc.s[sc.pos:], "->") {
@@ -320,6 +334,7 @@ var shapeDelims = []struct {
 }{
 	{"([", "])", shapeStadium},
 	{"((", "))", shapeCircle},
+	{"[(", ")]", shapeStadium}, // cylinder: drawn as a rounded box
 	{"[", "]", shapeRect},
 	{"(", ")", shapeRounded},
 	{"{", "}", shapeDiamond},

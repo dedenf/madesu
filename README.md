@@ -149,7 +149,7 @@ The preview renders CommonMark plus these GitHub-flavored extensions:
 - Bullet and ordered lists, nested up to any depth, tight and loose
 - Task lists (`☑` / `☐`)
 - Fenced and indented code blocks, with the language label
-- Mermaid flowcharts (`graph` / `flowchart` with `TB`/`TD`, `LR`, `BT`, `RL` directions), drawn with box-drawing characters: rectangle, rounded, stadium, circle, and diamond nodes; normal, dotted, and thick edges; edge labels (`-->|text|` and `-- text -->` forms)
+- Mermaid flowcharts (`graph` / `flowchart` with `TB`/`TD`, `LR`, `BT`, `RL` directions), drawn with box-drawing characters: rectangle, rounded, stadium, cylinder, circle, and diamond nodes; normal, dotted, thick, and bidirectional edges; edge labels (`-->|text|` and `-- text -->` forms). `subgraph` blocks are flattened: their nodes and edges render, the grouping box is not drawn. `<br/>` inside labels becomes a space.
 - Tables with left, center, and right alignment; long cells wrap inside their column
 - Footnotes (`[^1]`), rendered as `[1]` with the notes listed at the end
 - Definition lists
@@ -161,7 +161,7 @@ Not rendered yet:
 - **Math** (`$...$`, `$$...$$`) is shown as plain text.
 - **Raw HTML** is shown as plain text, since a terminal cannot render it.
 - **Syntax highlighting** in code blocks is not implemented. Code blocks only get a background color.
-- **Mermaid** diagrams other than flowcharts (sequence, state, ER, gantt, ...) are shown as plain code blocks. Flowcharts using unsupported syntax (`subgraph`, `classDef`/`style`, theme directives, self-loops) also fall back to plain code blocks.
+- **Mermaid** diagrams other than flowcharts (sequence, state, ER, gantt, ...) are shown as plain code blocks. Flowcharts using unsupported syntax (`classDef`/`style`, theme directives, self-loops, parallel or opposite-direction edges, exotic shapes such as parallelograms and flags) also fall back to plain code blocks.
 - **Other diagram languages** are shown as plain code blocks.
 - **Images** are not displayed; the alt text and URL are shown.
 

@@ -324,9 +324,9 @@ func buildGrid(g *flowGraph) ([][]cell, error) {
 				}
 				if crossCenter(c.nodes[i], horiz) != crossCenter(c.nodes[i+1], horiz) {
 					h = 3
-				} else if h < 2 && (c.e.label != "" || c.e.style != edgeNormal) {
-					// A label or a dotted/thick segment needs a second row:
-					// one for the glyph, one for the arrowhead.
+				} else if h < 2 && (c.e.label != "" || c.e.style != edgeNormal || c.e.bidir) {
+					// A label, a dotted/thick segment, or a second arrowhead
+					// needs a second row.
 					h = 2
 				}
 			}
@@ -396,10 +396,10 @@ func buildGrid(g *flowGraph) ([][]cell, error) {
 				for k := 0; k < gt; k++ {
 					cv.put(y0+k, x1, cell{ch: seg, chrome: true})
 				}
-				if last && c.hiIsTo {
+				if last && (c.hiIsTo || c.e.bidir) {
 					cv.put(y0+gt-1, x1, cell{ch: arrowGlyph(horiz, true, flip), chrome: true})
 				}
-				if i == 0 && !c.hiIsTo {
+				if i == 0 && (!c.hiIsTo || c.e.bidir) {
 					cv.put(y0, x1, cell{ch: arrowGlyph(horiz, false, flip), chrome: true})
 				}
 				continue
@@ -412,10 +412,10 @@ func buildGrid(g *flowGraph) ([][]cell, error) {
 			}
 			cv.put(y0+1, x2, cell{ch: cornerGlyph(horiz, false, x2 > x1), chrome: true})
 			cv.put(y0+2, x2, cell{ch: seg, chrome: true})
-			if last && c.hiIsTo {
+			if last && (c.hiIsTo || c.e.bidir) {
 				cv.put(y0+2, x2, cell{ch: arrowGlyph(horiz, true, flip), chrome: true})
 			}
-			if i == 0 && !c.hiIsTo {
+			if i == 0 && (!c.hiIsTo || c.e.bidir) {
 				cv.put(y0, x1, cell{ch: arrowGlyph(horiz, false, flip), chrome: true})
 			}
 		}
@@ -520,9 +520,13 @@ func rankExtent(bs []*box, horiz bool) int {
 	return e
 }
 
+// labelBreaks turns mermaid's line-break tags into spaces: diagrams are
+// single-line per node.
+var labelBreaks = strings.NewReplacer("<br/>", " ", "<br />", " ", "<br>", " ")
+
 // nodeBox renders one node's glyphs: lines, display width, height.
 func nodeBox(n *flowNode) ([]string, int, int) {
-	label := n.label
+	label := labelBreaks.Replace(n.label)
 	if lipgloss.Width(label) > maxLabelCols {
 		label = truncateCols(label, maxLabelCols)
 	}
