@@ -7,6 +7,9 @@ package main
 import (
 	"sort"
 	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
 )
 
 type box struct {
@@ -249,4 +252,316 @@ func reindex(br []*box) {
 	for i, b := range br {
 		b.order = i
 	}
+}
+
+const (
+	maxLabelCols = 24 // longest node label before truncation
+	intraGap     = 3  // empty columns between boxes in one rank
+)
+
+type cell struct {
+	ch     rune
+	chrome bool // line/box drawing, rendered muted by styled variant
+}
+
+// layoutFlowchart renders the graph to plain text.
+func layoutFlowchart(g *flowGraph) ([]string, error) {
+	cells, err := buildGrid(g)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]string, len(cells))
+	for i, row := range cells {
+		var b strings.Builder
+		for _, c := range row {
+			b.WriteRune(c.ch)
+		}
+		out[i] = strings.TrimRight(b.String(), " ")
+	}
+	for len(out) > 0 && strings.TrimSpace(out[len(out)-1]) == "" {
+		out = out[:len(out)-1]
+	}
+	return out, nil
+}
+
+func buildGrid(g *flowGraph) ([][]cell, error) {
+	l, err := planLayout(g)
+	if err != nil {
+		return nil, err
+	}
+	// Column placement within each rank.
+	for _, bs := range l.buckets {
+		x := 0
+		for _, b := range bs {
+			if b.virtual {
+				b.w, b.h = 1, 1
+			} else {
+				_, b.w, b.h = nodeBox(b.n)
+			}
+			b.x = x
+			x += b.w + intraGap
+		}
+	}
+	// Gutter rows between consecutive ranks: 1 bare, 2 with a label,
+	// 3 when an edge must bend.
+	maxRank := len(l.buckets) - 1
+	horiz := g.dir == dirLR || g.dir == dirRL
+	gh := make([]int, maxRank)
+	for r := range gh {
+		h := 1
+		for _, c := range l.chains {
+			for i := 0; i+1 < len(c.nodes); i++ {
+				if c.nodes[i].rank != r || c.nodes[i+1].rank != r+1 {
+					continue
+				}
+				if crossCenter(c.nodes[i], horiz) != crossCenter(c.nodes[i+1], horiz) {
+					h = 3
+				} else if h < 2 && c.e.label != "" {
+					h = 2
+				}
+			}
+		}
+		gh[r] = h
+	}
+	// Along-axis offsets. A rank spans its tallest box — or its widest when
+	// the flow runs horizontally.
+	yTop := make([]int, len(l.buckets))
+	y := 0
+	for r := range l.buckets {
+		yTop[r] = y
+		y += rankExtent(l.buckets[r], horiz)
+		if r < len(gh) {
+			y += gh[r]
+		}
+	}
+	crossLen := 0
+	for _, bs := range l.buckets {
+		for _, b := range bs {
+			crossLen = max(crossLen, b.x+crossExtent(b, horiz))
+		}
+	}
+	// +8: headroom so edge labels never clip; trailing space is trimmed.
+	// The canvas stays TD until the directions task flips it.
+	cv := newCanvas(false, y+8, crossLen+8)
+
+	// Boxes.
+	for r, bs := range l.buckets {
+		re := rankExtent(bs, horiz)
+		for _, b := range bs {
+			if b.virtual {
+				continue
+			}
+			lines, _, h := nodeBox(b.n)
+			// Center along the flow axis using the dimension that axis sees,
+			// so horizontal layouts do not offset boxes by their height.
+			al := h
+			if horiz {
+				al = b.w
+			}
+			bx := yTop[r] + (re-al)/2
+			for i, line := range lines {
+				j := 0 // column index: range over a string yields byte offsets
+				for _, ch := range line {
+					a, c := bx+i, b.x+j
+					if cv.horiz { // keep text horizontal on the final grid
+						a, c = bx+j, b.x+i
+					}
+					cv.put(a, c, cell{ch: ch, chrome: true})
+					j++
+				}
+			}
+		}
+	}
+	// Edges (straight runs only; bends arrive in the next task).
+	flip := g.dir == dirBT || g.dir == dirRL
+	for _, c := range l.chains {
+		for i := 0; i+1 < len(c.nodes); i++ {
+			b1, b2 := c.nodes[i], c.nodes[i+1]
+			r := b1.rank
+			y0 := yTop[r] + rankExtent(l.buckets[r], horiz)
+			gt := gh[r]
+			x1, x2 := crossCenter(b1, horiz), crossCenter(b2, horiz)
+			seg := segGlyph(horiz, c.e.style, true)
+			if x1 == x2 {
+				for k := 0; k < gt; k++ {
+					cv.put(y0+k, x1, cell{ch: seg, chrome: true})
+				}
+				if i+2 == len(c.nodes) && c.hiIsTo {
+					cv.put(y0+gt-1, x1, cell{ch: arrowGlyph(horiz, true, flip), chrome: true})
+				}
+				if i == 0 && !c.hiIsTo {
+					cv.put(y0, x1, cell{ch: arrowGlyph(horiz, false, flip), chrome: true})
+				}
+			}
+		}
+	}
+	return cv.cells, nil
+}
+
+type canvas struct {
+	cells [][]cell
+	horiz bool
+}
+
+// newCanvas allocates a canvas of final dimensions. Rank-space coordinates
+// (along a, cross c) map to (row, col) = (a, c), or (c, a) when horizontal.
+func newCanvas(horiz bool, alongLen, crossLen int) *canvas {
+	rows, cols := alongLen, crossLen
+	if horiz {
+		rows, cols = crossLen, alongLen
+	}
+	c := &canvas{horiz: horiz, cells: make([][]cell, rows)}
+	for i := range c.cells {
+		c.cells[i] = make([]cell, cols)
+		for j := range c.cells[i] {
+			c.cells[i][j].ch = ' '
+		}
+	}
+	return c
+}
+
+func (cv *canvas) put(a, c int, cell cell) {
+	if cv.horiz {
+		if c < 0 || c >= len(cv.cells) || a < 0 || a >= len(cv.cells[c]) {
+			return
+		}
+		cv.cells[c][a] = cell
+		return
+	}
+	if a < 0 || a >= len(cv.cells) || c < 0 || c >= len(cv.cells[a]) {
+		return
+	}
+	cv.cells[a][c] = cell
+}
+
+func (cv *canvas) empty(a, c int) bool {
+	if cv.horiz {
+		if c < 0 || c >= len(cv.cells) || a < 0 || a >= len(cv.cells[c]) {
+			return false
+		}
+		return cv.cells[c][a].ch == ' '
+	}
+	if a < 0 || a >= len(cv.cells) || c < 0 || c >= len(cv.cells[a]) {
+		return false
+	}
+	return cv.cells[a][c].ch == ' '
+}
+
+// crossExtent is a box's size across the flow: its width, or its height
+// when the flow runs horizontally.
+func crossExtent(b *box, horiz bool) int {
+	if horiz {
+		return b.h
+	}
+	return b.w
+}
+
+// crossCenter is where an edge attaches: the middle of the cross extent.
+func crossCenter(b *box, horiz bool) int {
+	return b.x + crossExtent(b, horiz)/2
+}
+
+// rankExtent is how much along-axis space a rank needs: its tallest box, or
+// its widest when the flow runs horizontally.
+func rankExtent(bs []*box, horiz bool) int {
+	e := 1
+	for _, b := range bs {
+		if horiz {
+			e = max(e, b.w)
+		} else {
+			e = max(e, b.h)
+		}
+	}
+	return e
+}
+
+// nodeBox renders one node's glyphs: lines, display width, height.
+func nodeBox(n *flowNode) ([]string, int, int) {
+	label := n.label
+	if lipgloss.Width(label) > maxLabelCols {
+		label = truncateCols(label, maxLabelCols)
+	}
+	switch n.shape {
+	case shapeDiamond:
+		lw := lipgloss.Width(label)
+		w := lw + 4
+		pad := (w - lw - 2) / 2
+		return []string{
+			strings.Repeat(" ", pad) + "╱╲",
+			"╱ " + label + " ╲",
+			strings.Repeat(" ", pad) + "╲╱",
+		}, w, 3
+	case shapeCircle:
+		return []string{"((" + label + "))"}, lipgloss.Width(label) + 4, 1
+	default: // rect, rounded, and stadium look alike at one row
+		open, close := '[', ']'
+		if n.shape == shapeRounded || n.shape == shapeStadium {
+			open, close = '(', ')'
+		}
+		return []string{string(open) + label + string(close)}, lipgloss.Width(label) + 2, 1
+	}
+}
+
+// truncateCols cuts s to at most n display columns, ending with an ellipsis.
+func truncateCols(s string, n int) string {
+	var b strings.Builder
+	w := 0
+	for _, r := range s {
+		rw := lipgloss.Width(string(r))
+		if w+rw > n-1 {
+			break
+		}
+		b.WriteRune(r)
+		w += rw
+	}
+	b.WriteString("…")
+	return b.String()
+}
+
+// segGlyph picks the line glyph. along is rank-space orientation; the final
+// orientation is horizontal when along == horiz.
+func segGlyph(horiz bool, st edgeStyle, along bool) rune {
+	h := along == horiz
+	switch st {
+	case edgeDotted:
+		if h {
+			return '┄'
+		}
+		return '┆'
+	case edgeThick:
+		if h {
+			return '═'
+		}
+		return '║'
+	default:
+		if h {
+			return '─'
+		}
+		return '│'
+	}
+}
+
+func arrowGlyph(horiz, intoHi, flip bool) rune {
+	g := '▲'
+	switch {
+	case horiz && intoHi:
+		g = '▶'
+	case horiz:
+		g = '◀'
+	case intoHi:
+		g = '▼'
+	}
+	if flip {
+		switch g {
+		case '▼':
+			g = '▲'
+		case '▲':
+			g = '▼'
+		case '▶':
+			g = '◀'
+		case '◀':
+			g = '▶'
+		}
+	}
+	return g
 }

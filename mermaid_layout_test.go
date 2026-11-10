@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
 
 func TestRankChainAndDiamond(t *testing.T) {
 	g := mustParse(t, "flowchart TD\nA --> B\nB --> C")
@@ -70,5 +74,68 @@ func TestPlanLayoutSelfLoopRejected(t *testing.T) {
 	g := mustParse(t, "flowchart TD\nA --> A")
 	if _, err := planLayout(g); err == nil {
 		t.Fatal("self loop accepted")
+	}
+}
+
+func TestLayoutChainTB(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA --> B\nB --> C")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"[A]", " ▼", "[B]", " ▼", "[C]"}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("got:\n%s\nwant:\n%s", strings.Join(lines, "\n"), strings.Join(want, "\n"))
+	}
+}
+
+func TestLayoutStandaloneNode(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nSolo[One]")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 1 || lines[0] != "[One]" {
+		t.Fatalf("got %q", lines)
+	}
+}
+
+func TestLayoutShapes(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA(Round)\nB{Why}\nC((Dot))")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"(Round)", "╱╲", "╱ Why ╲", "╲╱", "((Dot))"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func TestLayoutLabelTruncated(t *testing.T) {
+	long := strings.Repeat("x", 40)
+	g := mustParse(t, "flowchart TD\nA["+long+"]")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len([]rune(lines[0])); got > 24+2 {
+		t.Fatalf("box width %d exceeds 26: %q", got, lines[0])
+	}
+	if !strings.HasSuffix(lines[0], "…]") {
+		t.Fatalf("no ellipsis: %q", lines[0])
+	}
+}
+
+func TestLayoutStadiumLikeRounded(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA([Stad])")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines[0] != "(Stad)" {
+		t.Fatalf("got %q, want \"(Stad)\"", lines[0])
 	}
 }
