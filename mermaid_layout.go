@@ -343,8 +343,7 @@ func buildGrid(g *flowGraph) ([][]cell, error) {
 		}
 	}
 	// +8: headroom so edge labels never clip; trailing space is trimmed.
-	// The canvas stays TD until the directions task flips it.
-	cv := newCanvas(false, y+8, crossLen+8)
+	cv := newCanvas(horiz, y+8, crossLen+8)
 
 	// Boxes.
 	for r, bs := range l.buckets {

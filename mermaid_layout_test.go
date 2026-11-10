@@ -193,3 +193,51 @@ func TestLayoutDottedAndThick(t *testing.T) {
 		t.Fatalf("missing dotted/thick glyphs in:\n%s", joined)
 	}
 }
+
+func TestLayoutLR(t *testing.T) {
+	g := mustParse(t, "graph LR\nA --> B")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"[A]▶[B]"}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("got:\n%q\nwant:\n%q", lines, want)
+	}
+}
+
+func TestLayoutBTFlipsArrows(t *testing.T) {
+	g := mustParse(t, "flowchart BT\nA --> B")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"[A]", " ▲", "[B]"}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("got:\n%q\nwant:\n%q", lines, want)
+	}
+}
+
+func TestLayoutRLPointsLeft(t *testing.T) {
+	g := mustParse(t, "flowchart RL\nA --> B")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"[A]◀[B]"}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("got:\n%q\nwant:\n%q", lines, want)
+	}
+}
+
+func TestLayoutLRChainHorizontal(t *testing.T) {
+	g := mustParse(t, "flowchart LR\nA --> B\nB --> C")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"[A]▶[B]▶[C]"}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("got:\n%q\nwant:\n%q", lines, want)
+	}
+}
