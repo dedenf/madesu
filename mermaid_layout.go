@@ -316,7 +316,9 @@ func buildGrid(g *flowGraph) ([][]cell, error) {
 				}
 				if crossCenter(c.nodes[i], horiz) != crossCenter(c.nodes[i+1], horiz) {
 					h = 3
-				} else if h < 2 && c.e.label != "" {
+				} else if h < 2 && (c.e.label != "" || c.e.style != edgeNormal) {
+					// A label or a dotted/thick segment needs a second row:
+					// one for the glyph, one for the arrowhead.
 					h = 2
 				}
 			}
@@ -372,7 +374,7 @@ func buildGrid(g *flowGraph) ([][]cell, error) {
 			}
 		}
 	}
-	// Edges (straight runs only; bends arrive in the next task).
+	// Edges. (horiz is already in scope from the canvas setup.)
 	flip := g.dir == dirBT || g.dir == dirRL
 	for _, c := range l.chains {
 		for i := 0; i+1 < len(c.nodes); i++ {
@@ -381,18 +383,47 @@ func buildGrid(g *flowGraph) ([][]cell, error) {
 			y0 := yTop[r] + rankExtent(l.buckets[r], horiz)
 			gt := gh[r]
 			x1, x2 := crossCenter(b1, horiz), crossCenter(b2, horiz)
+			last := i+2 == len(c.nodes)
 			seg := segGlyph(horiz, c.e.style, true)
 			if x1 == x2 {
 				for k := 0; k < gt; k++ {
 					cv.put(y0+k, x1, cell{ch: seg, chrome: true})
 				}
-				if i+2 == len(c.nodes) && c.hiIsTo {
+				if last && c.hiIsTo {
 					cv.put(y0+gt-1, x1, cell{ch: arrowGlyph(horiz, true, flip), chrome: true})
 				}
 				if i == 0 && !c.hiIsTo {
 					cv.put(y0, x1, cell{ch: arrowGlyph(horiz, false, flip), chrome: true})
 				}
+				continue
 			}
+			// Orthogonal bend through the middle gutter row.
+			cv.put(y0, x1, cell{ch: seg, chrome: true})
+			cv.put(y0+1, x1, cell{ch: cornerGlyph(horiz, true, x2 > x1), chrome: true})
+			for x := min(x1, x2) + 1; x < max(x1, x2); x++ {
+				cv.put(y0+1, x, cell{ch: segGlyph(horiz, c.e.style, false), chrome: true})
+			}
+			cv.put(y0+1, x2, cell{ch: cornerGlyph(horiz, false, x2 > x1), chrome: true})
+			cv.put(y0+2, x2, cell{ch: seg, chrome: true})
+			if last && c.hiIsTo {
+				cv.put(y0+2, x2, cell{ch: arrowGlyph(horiz, true, flip), chrome: true})
+			}
+			if i == 0 && !c.hiIsTo {
+				cv.put(y0, x1, cell{ch: arrowGlyph(horiz, false, flip), chrome: true})
+			}
+		}
+		// Label on the first gutter row of the edge's first segment,
+		// written into empty cells only.
+		if c.e.label != "" {
+			b1, b2 := c.nodes[0], c.nodes[1]
+			r := b1.rank
+			y0 := yTop[r] + rankExtent(l.buckets[r], horiz)
+			x1, x2 := crossCenter(b1, horiz), crossCenter(b2, horiz)
+			lx := x1 + 1
+			if x1 != x2 {
+				lx = min(x1, x2) + 1
+			}
+			putLabel(cv, y0, lx, c.e.label)
 		}
 	}
 	return cv.cells, nil
@@ -564,4 +595,48 @@ func arrowGlyph(horiz, intoHi, flip bool) rune {
 		}
 	}
 	return g
+}
+
+// cornerGlyph picks the bend corner. atStart is the source-side corner;
+// rightward is true when the horizontal run moves toward larger columns.
+func cornerGlyph(horiz, atStart, rightward bool) rune {
+	switch {
+	case !horiz && atStart: // coming down, turning
+		if rightward {
+			return '└'
+		}
+		return '┐'
+	case !horiz: // coming from the side, turning down
+		if rightward {
+			return '┐'
+		}
+		return '└'
+	case atStart: // coming right, turning up/down
+		if rightward {
+			return '┐'
+		}
+		return '┘'
+	default:
+		if rightward {
+			return '└'
+		}
+		return '┌'
+	}
+}
+
+// putLabel writes text left-to-right (in final orientation) into empty
+// cells, truncating at the first occupied cell.
+func putLabel(cv *canvas, a, c int, text string) {
+	i := 0
+	for _, ch := range text {
+		p, q := a, c+i
+		if cv.horiz {
+			p, q = a+i, c
+		}
+		if !cv.empty(p, q) {
+			return
+		}
+		cv.put(p, q, cell{ch: ch})
+		i++
+	}
 }

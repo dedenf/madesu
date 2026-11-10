@@ -139,3 +139,57 @@ func TestLayoutStadiumLikeRounded(t *testing.T) {
 		t.Fatalf("got %q, want \"(Stad)\"", lines[0])
 	}
 }
+
+func TestLayoutBend(t *testing.T) {
+	// Source centered at col 1, target offset to the right: expect └──┐ bend.
+	g := mustParse(t, "flowchart TD\nA --> B\nB --> LongLabel")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	for _, want := range []string{"└", "┐"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing bend corner %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func TestLayoutEdgeLabel(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA -->|go| B")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"[A]", " │go", " ▼", "[B]"}
+	if !reflect.DeepEqual(lines, want) {
+		t.Fatalf("got:\n%q\nwant:\n%q", lines, want)
+	}
+}
+
+func TestLayoutDiamondBranchLabels(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA --> B{choice}\nB -->|yes| C\nB -->|no| D")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "yes") {
+		t.Fatalf("missing label \"yes\" in:\n%s", joined)
+	}
+	if strings.Count(joined, "▼")+strings.Count(joined, "┆")+strings.Count(joined, "║") < 3 {
+		t.Fatalf("expected 3 arrows in:\n%s", joined)
+	}
+}
+
+func TestLayoutDottedAndThick(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA -.-> B\nB ==> C")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "┆") || !strings.Contains(joined, "║") {
+		t.Fatalf("missing dotted/thick glyphs in:\n%s", joined)
+	}
+}
