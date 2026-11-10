@@ -241,3 +241,37 @@ func TestLayoutLRChainHorizontal(t *testing.T) {
 		t.Fatalf("got:\n%q\nwant:\n%q", lines, want)
 	}
 }
+
+func TestPlanLayoutRejectsParallelEdges(t *testing.T) {
+	for _, src := range []string{
+		"flowchart TD\nA --> B\nA ==> B",
+		"flowchart TD\nA --> B\nB --> A",
+	} {
+		if _, err := planLayout(mustParse(t, src)); err == nil {
+			t.Fatalf("%q: parallel edges accepted", src)
+		}
+	}
+}
+
+func TestLayoutBentLabelStaysReadable(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nA --> B{ok}\nB -->|yes| C")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(lines, "\n")
+	if !strings.Contains(joined, "yes") {
+		t.Fatalf("bent-edge label truncated:\n%s", joined)
+	}
+}
+
+func TestLayoutDiamondCapCentered(t *testing.T) {
+	g := mustParse(t, "flowchart TD\nB{choice}")
+	lines, err := layoutFlowchart(g)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lines[0] != "    ╱╲" {
+		t.Fatalf("diamond cap not centered: %q", lines[0])
+	}
+}

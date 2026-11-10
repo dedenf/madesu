@@ -115,10 +115,18 @@ func rankNodes(nodes []*flowNode, work []workEdge) map[string]int {
 // planLayout builds boxes (one per node per rank, plus virtual bend points
 // for edges spanning multiple ranks), chains, and an ordered bucket list.
 func planLayout(g *flowGraph) (*layout, error) {
+	seen := make(map[[2]string]bool, len(g.edges))
 	for _, e := range g.edges {
 		if e.from == e.to {
 			return nil, errUnsupported
 		}
+		k := [2]string{e.from, e.to}
+		// Two edges on the same pair (parallel, or opposite directions)
+		// would share a routing column and overwrite each other.
+		if seen[k] || seen[[2]string{e.to, e.from}] {
+			return nil, errUnsupported
+		}
+		seen[k] = true
 	}
 	if len(g.nodes) == 0 {
 		return nil, errUnsupported
@@ -464,6 +472,13 @@ func (cv *canvas) put(a, c int, cell cell) {
 	cv.cells[a][c] = cell
 }
 
+func (cv *canvas) inBounds(a, c int) bool {
+	if cv.horiz {
+		return c >= 0 && c < len(cv.cells) && a >= 0 && a < len(cv.cells[c])
+	}
+	return a >= 0 && a < len(cv.cells) && c >= 0 && c < len(cv.cells[a])
+}
+
 func (cv *canvas) empty(a, c int) bool {
 	if cv.horiz {
 		if c < 0 || c >= len(cv.cells) || a < 0 || a >= len(cv.cells[c]) {
@@ -515,7 +530,7 @@ func nodeBox(n *flowNode) ([]string, int, int) {
 	case shapeDiamond:
 		lw := lipgloss.Width(label)
 		w := lw + 4
-		pad := (w - lw - 2) / 2
+		pad := (w - 2) / 2 // center the 2-glyph cap over the full width
 		return []string{
 			strings.Repeat(" ", pad) + "╱╲",
 			"╱ " + label + " ╲",
@@ -623,20 +638,41 @@ func cornerGlyph(horiz, atStart, rightward bool) rune {
 	}
 }
 
-// putLabel writes text left-to-right (in final orientation) into empty
-// cells, truncating at the first occupied cell.
+// putLabel writes text left-to-right (in final orientation) into the first
+// run of empty cells at or after the anchor, so an edge glyph between the
+// anchor and open space does not truncate the label.
 func putLabel(cv *canvas, a, c int, text string) {
-	i := 0
-	for _, ch := range text {
-		p, q := a, c+i
-		if cv.horiz {
-			p, q = a+i, c
+	r := []rune(text)
+	for {
+		fits := true
+		for i := range r {
+			p, q := a, c+i
+			if cv.horiz {
+				p, q = a+i, c
+			}
+			if !cv.empty(p, q) {
+				fits = false
+				break
+			}
 		}
-		if !cv.empty(p, q) {
+		if fits {
+			for i, ch := range r {
+				p, q := a, c+i
+				if cv.horiz {
+					p, q = a+i, c
+				}
+				cv.put(p, q, cell{ch: ch})
+			}
 			return
 		}
-		cv.put(p, q, cell{ch: ch})
-		i++
+		if cv.horiz {
+			a++
+		} else {
+			c++
+		}
+		if !cv.inBounds(a, c) {
+			return
+		}
 	}
 }
 

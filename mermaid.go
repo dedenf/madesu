@@ -8,6 +8,8 @@ package main
 import (
 	"errors"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 )
 
 var errUnsupported = errors.New("mermaid: unsupported syntax")
@@ -275,8 +277,12 @@ func (sc *scan) spaces() {
 
 func (sc *scan) nodeDef(p *parser) (*flowNode, error) {
 	start := sc.pos
-	for sc.pos < len(sc.s) && isIDChar(sc.s[sc.pos]) {
-		sc.pos++
+	for sc.pos < len(sc.s) {
+		r, size := utf8.DecodeRuneInString(sc.s[sc.pos:])
+		if !isIDRune(r) {
+			break
+		}
+		sc.pos += size
 	}
 	if sc.pos == start {
 		return nil, errUnsupported
@@ -301,14 +307,11 @@ func (sc *scan) nodeDef(p *parser) (*flowNode, error) {
 	return n, nil
 }
 
-func isIDChar(c byte) bool {
-	switch {
-	case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
-		return true
-	case c == '_' || c >= 0x80: // multibyte ids stay inside one node name
-		return true
-	}
-	return false
+// isIDRune keeps letters, digits, and underscore in ids. Anything else (an
+// arrow, say) ends the id so the statement fails to parse and falls back,
+// instead of being swallowed into a node name.
+func isIDRune(r rune) bool {
+	return r == '_' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 var shapeDelims = []struct {
@@ -328,6 +331,14 @@ func (sc *scan) shape() (shapeKind, string, bool, error) {
 			continue
 		}
 		sc.pos += len(d.open)
+		// Cylinder, parallelogram, subroutine, flag, and hexagon shapes all
+		// start with '[' too; reject them rather than misreading a rect.
+		if d.open == "[" && sc.pos < len(sc.s) {
+			switch sc.s[sc.pos] {
+			case '(', '[', '/', '\\', '>', '{':
+				return 0, "", false, errUnsupported
+			}
+		}
 		label, ok := sc.scanTo(d.close)
 		if !ok {
 			return 0, "", false, errUnsupported

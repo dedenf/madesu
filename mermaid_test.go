@@ -179,3 +179,29 @@ func TestParseDirectiveFirstLine(t *testing.T) {
 		t.Fatalf("err %v, want errUnsupported", err)
 	}
 }
+
+func TestParseRejectsExoticBracketShapes(t *testing.T) {
+	for _, src := range []string{
+		"flowchart TD\nA[(db)]",
+		"flowchart TD\nA[/parallelogram/]",
+		"flowchart TD\nA[[sub]]",
+		"flowchart TD\nA>flag]",
+	} {
+		if _, err := parseFlowchart([]byte(src)); !errors.Is(err, errUnsupported) {
+			t.Fatalf("%q: err %v, want errUnsupported", src, err)
+		}
+	}
+}
+
+func TestParseUnicodeArrowIsNotAnID(t *testing.T) {
+	if _, err := parseFlowchart([]byte("flowchart TD\nA→B")); !errors.Is(err, errUnsupported) {
+		t.Fatalf("A→B: err %v, want errUnsupported", err)
+	}
+}
+
+func TestParseUnicodeLetterID(t *testing.T) {
+	g := mustParse(t, "flowchart TD\n节点[Node]")
+	if len(g.nodes) != 1 || g.nodes[0].id != "节点" || g.nodes[0].label != "Node" {
+		t.Fatalf("nodes %+v", g.nodes)
+	}
+}
